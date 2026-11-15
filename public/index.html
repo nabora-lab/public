@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="ur-Latn">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Video Library</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="logo" href="/"><span class="logo-mark">▶</span><span id="siteTitle">Video Library</span></a>
+      <div class="spacer"></div>
+      <input id="search" class="search" type="search" placeholder="Video search karein..." aria-label="Search videos">
+      <a class="nav-link" href="/admin.html">Admin</a>
+    </div>
+  </header>
+
+  <main class="container">
+    <h1 class="section-title">Videos <span id="count" class="count"></span></h1>
+    <div id="grid" class="grid"></div>
+    <div id="empty" class="empty" hidden>
+      <h2 id="emptyTitle">Koi video nahi mili</h2>
+      <p id="emptyText">Admin panel se Google Drive ki video add karein.</p>
+    </div>
+  </main>
+
+  <footer class="footer">Videos Google Drive se stream hoti hain.</footer>
+
+  <div id="modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="mTitle">
+    <div class="backdrop" data-close></div>
+    <div class="modal-box">
+      <button class="close" data-close aria-label="Band karein">✕</button>
+      <div class="player" id="player"></div>
+      <div class="modal-info">
+        <h3 id="mTitle"></h3>
+        <p id="mDesc"></p>
+        <div class="modal-links" id="mLinks"></div>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function () {
+  var grid = document.getElementById('grid');
+  var empty = document.getElementById('empty');
+  var countEl = document.getElementById('count');
+  var search = document.getElementById('search');
+  var modal = document.getElementById('modal');
+  var player = document.getElementById('player');
+  var mTitle = document.getElementById('mTitle');
+  var mDesc = document.getElementById('mDesc');
+  var mLinks = document.getElementById('mLinks');
+  var videos = [];
+
+  function thumbUrl(id) { return 'https://drive.google.com/thumbnail?id=' + encodeURIComponent(id) + '&sz=w640'; }
+  function previewUrl(id) { return 'https://drive.google.com/file/d/' + encodeURIComponent(id) + '/preview'; }
+
+  function el(tag, props, children) {
+    var e = document.createElement(tag);
+    Object.keys(props || {}).forEach(function (k) {
+      if (k === 'class') e.className = props[k];
+      else if (k === 'text') e.textContent = props[k];
+      else e.setAttribute(k, props[k]);
+    });
+    (children || []).forEach(function (c) { e.appendChild(c); });
+    return e;
+  }
+
+  function render(list) {
+    grid.innerHTML = '';
+    empty.hidden = list.length > 0;
+    countEl.textContent = list.length ? '(' + list.length + ')' : '';
+    list.forEach(function (v) {
+      var img = el('img', { src: thumbUrl(v.id), alt: '', loading: 'lazy', referrerpolicy: 'no-referrer' });
+      img.addEventListener('error', function () { img.remove(); });
+      var thumb = el('div', { 'class': 'thumb' }, [
+        el('div', { 'class': 'fallback', text: '🎬' }), img,
+        el('div', { 'class': 'play' }, [el('span', { text: '▶' })])
+      ]);
+      var body = el('div', { 'class': 'card-body' }, [
+        el('h3', { 'class': 'card-title', text: v.title }),
+        el('p', { 'class': 'card-desc', text: v.description || '' })
+      ]);
+      var card = el('button', { 'class': 'card', type: 'button' }, [thumb, body]);
+      card.addEventListener('click', function () { openVideo(v); });
+      grid.appendChild(card);
+    });
+  }
+
+  function openVideo(v) {
+    player.innerHTML = '';
+    player.appendChild(el('iframe', { src: previewUrl(v.id), allow: 'autoplay; fullscreen', allowfullscreen: '', title: v.title }));
+    mTitle.textContent = v.title;
+    mDesc.textContent = v.description || '';
+    mLinks.innerHTML = '';
+    mLinks.appendChild(el('a', { href: 'https://drive.google.com/file/d/' + v.id + '/view', target: '_blank', rel: 'noopener', text: 'Drive mein kholein ↗' }));
+    modal.classList.add('open');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeVideo() {
+    modal.classList.remove('open');
+    player.innerHTML = '';
+    document.body.style.overflow = '';
+  }
+
+  modal.addEventListener('click', function (e) { if (e.target.hasAttribute('data-close')) closeVideo(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeVideo(); });
+
+  search.addEventListener('input', function () {
+    var q = search.value.trim().toLowerCase();
+    render(q ? videos.filter(function (v) { return (v.title + ' ' + (v.description || '')).toLowerCase().indexOf(q) !== -1; }) : videos);
+  });
+
+  function showError(msg) {
+    document.getElementById('emptyTitle').textContent = 'Videos load nahi hui';
+    document.getElementById('emptyText').textContent = msg;
+    empty.hidden = false;
+  }
+
+  fetch('/api?a=config').then(function (r) { return r.json(); }).then(function (c) {
+    if (c && c.title) { document.getElementById('siteTitle').textContent = c.title; document.title = c.title; }
+  }).catch(function () {});
+
+  fetch('/api?a=list').then(function (r) {
+    return r.json().then(function (d) { return { ok: r.ok, status: r.status, data: d }; });
+  }).then(function (res) {
+    if (!res.ok || !Array.isArray(res.data)) {
+      return showError('Server ne error diya (' + res.status + '): ' + ((res.data && res.data.error) || 'unknown'));
+    }
+    videos = res.data.slice().reverse();
+    render(videos);
+    if (!videos.length) empty.hidden = false;
+    var hash = location.hash.slice(1);
+    if (hash) { var f = videos.filter(function (x) { return x.id === hash; })[0]; if (f) openVideo(f); }
+  }).catch(function (e) {
+    showError('Server se rabta nahi hua: ' + e.message);
+  });
+})();
+</script>
+</body>
+</html>
