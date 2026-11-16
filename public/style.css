@@ -160,3 +160,5 @@ textarea { min-height: 120px; resize: vertical; font-family: ui-monospace, Menlo
   .header-inner { flex-wrap: wrap; }
   .spacer { display: none; }
 }
+.modal-info { display: none; }
+.close { left: 10px; right: auto; }
